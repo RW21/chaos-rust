@@ -4,6 +4,9 @@ use threadpool::ThreadPool;
 use std::sync::mpsc::channel;
 use std::f32::consts;
 use std::fmt;
+use std::rc::Rc;
+use std::cell::RefCell;
+
 
 pub fn run(config: Config){
     let mut imgbuf = image::ImageBuffer::new(config.height, config.width);
@@ -15,13 +18,11 @@ pub fn run(config: Config){
 
     let edges = edges_of_polygon(config.edges,
         config.width as f32);
-    println!("{:?}", edges);
 
     // default color
     let color = image::Rgb([255, 255, 255]);
 
     let pool = ThreadPool::new(num_cpus::get());
-
     let (tx, rx) = channel();
     let workload = config.height * config.width / num_cpus::get() as u32;
 
@@ -29,12 +30,52 @@ pub fn run(config: Config){
         let tx = tx.clone();
         let config = config.clone();
         let edges = edges.clone();
+        let mut point = Point{x: config.width / 2, y: config.height /2};
         pool.execute(move ||{
-            let mut current_point = Point{x: config.width / 2, y: config.height /2};
-            let mut rng = rand::thread_rng();
-            for _j in 0..workload {
-                current_point = current_point.middle_point(&edges[rng.gen_range(0..config.edges as i32) as usize]);
-                tx.send(current_point).expect("Threading failed");
+            let mut current_edge = 0;
+            let current_edge = Rc::new(RefCell::new(0));
+
+            // Closures should ideally be defined outside each thread. 
+
+            let regular_pattern = |previous_point: &Point| -> Point {
+                let mut rng = rand::thread_rng();
+                previous_point.middle_point(&edges[rng.gen_range(0..config.edges as i32) as usize])
+            };
+
+            // The current vertex cannot be chosen in the next iteration
+            let mut same_edge_cannot_be_chosen_next = |previous_point: &Point| -> Point {
+                let mut rng = rand::thread_rng();
+                let mut new_edge = rng.gen_range(0..config.edges as i32);
+                // while new_edge == current_edge {
+                while new_edge == *current_edge.borrow(){
+                    new_edge = rng.gen_range(0..config.edges as i32);
+                };
+                // current_edge = new_edge;
+                *current_edge.borrow_mut() = new_edge;
+                previous_point.middle_point(&edges[new_edge as usize])
+            };
+
+            // The current vertex cannot be one place away (anti-clockwise) from the previous vertex
+            let mut edge_one_away_cannot_be_chosen_next = |previous_point: &Point| -> Point {
+                let mut rng = rand::thread_rng();
+                let mut new_edge = rng.gen_range(0..config.edges as i32);
+                let config = config.clone();
+                let mut prohibited_new_edge: i32 = *current_edge.borrow() - 1;
+                prohibited_new_edge = prohibited_new_edge.rem_euclid(config.edges as i32);
+                // while new_edge == prohibited_new_edge {
+                while new_edge == *current_edge.borrow(){
+                    new_edge = rng.gen_range(0..config.edges as i32);
+                };
+                // current_edge = new_edge;
+                *current_edge.borrow_mut() = new_edge;
+                previous_point.middle_point(&edges[new_edge as usize])
+            };
+
+
+            for _ in 0..workload {
+                // point = regular_pattern(&point);
+                point = same_edge_cannot_be_chosen_next(&point);
+                tx.send(point).expect("Threading failed");
         }})}
 
     for _i in 0..config.iterations{
