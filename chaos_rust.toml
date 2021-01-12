@@ -1,0 +1,5 @@
+height = 1024
+width = 1024
+iterations = 1000
+edges = 3
+factor = 0.2

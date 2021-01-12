@@ -12,6 +12,9 @@ rand = "0.8.0"
 num_cpus = "1.13.0"
 threadpool = "1.8.1"
 wasm-bindgen = "0.2"
+confy = "0.4.0"
+serde_derive = "1.0.119"
+serde = "1.0.119"
 
 [dependencies.web-sys]
 version = "0.3"
